@@ -1,4 +1,4 @@
-import { Ellipsis } from 'lucide-react';
+import { Ellipsis, ExternalLink } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { permissions } from '@nangohq/authz';
@@ -7,8 +7,9 @@ import { useDeleteTeamUser, usePatchTeamUser, useTeam } from '../../../hooks/use
 import { useStore } from '../../../store';
 import { Dot } from '@/components-v2/Dot';
 import { PermissionGate } from '@/components-v2/PermissionGate';
+import { StyledLink } from '@/components-v2/StyledLink';
 import { Badge } from '@/components-v2/ui/badge';
-import { Button } from '@/components-v2/ui/button';
+import { Button, ButtonLink } from '@/components-v2/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components-v2/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components-v2/ui/dropdown-menu';
 import { Input } from '@/components-v2/ui/input';
@@ -58,23 +59,29 @@ const EditRoleDialog: React.FC<{ user: ApiUser; onClose: () => void }> = ({ user
                 <DialogHeader>
                     <DialogTitle>Edit role</DialogTitle>
                 </DialogHeader>
-                <div className="flex items-center gap-2">
-                    <Input type="email" value={user.email} disabled className="flex-1" />
-                    <Select value={role} onValueChange={(value) => setRole(value as Role)}>
-                        <SelectTrigger className="w-40">
-                            <SelectValue placeholder="Select a role">{roles.find((r) => r.value === role)?.label}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent align="end" className="p-0 max-w-71">
-                            {roles.map(({ value, label, description }) => (
-                                <SelectItem key={value} value={value} className="h-fit p-2">
-                                    <div className="flex flex-col gap-1">
-                                        <span className="text-text-primary text-body-medium-regular">{label}</span>
-                                        <p className="text-text-secondary text-body-small-regular">{description}</p>
-                                    </div>
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-2">
+                        <Input type="email" value={user.email} disabled className="flex-1" />
+                        <Select value={role} onValueChange={(value) => setRole(value as Role)}>
+                            <SelectTrigger className="w-40">
+                                <SelectValue placeholder="Select a role">{roles.find((r) => r.value === role)?.label}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent align="end" className="p-0 max-w-71">
+                                {roles.map(({ value, label, description }) => (
+                                    <SelectItem key={value} value={value} className="h-fit p-2">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-text-primary text-body-medium-regular">{label}</span>
+                                            <p className="text-text-secondary text-body-small-regular">{description}</p>
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <StyledLink to="https://docs.nango.dev/guides/platform/team" type="external" icon>
+                        Learn more about roles and permissions
+                    </StyledLink>
                 </div>
                 <DialogFooter>
                     <DialogClose asChild>
@@ -138,7 +145,14 @@ export const TeamMembers: React.FC = () => {
                     <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Email</TableHead>
-                        <TableHead>Role</TableHead>
+                        <TableHead>
+                            <div className="inline-flex items-center gap-0.5">
+                                <span>Role</span>
+                                <ButtonLink to="https://docs.nango.dev/guides/platform/team" size="icon" variant="ghost" target="_blank">
+                                    <ExternalLink className="size-3" />
+                                </ButtonLink>
+                            </div>
+                        </TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">{/* Actions */}</TableHead>
                     </TableRow>
