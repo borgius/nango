@@ -19,11 +19,12 @@ export async function up(knex: Knex): Promise<void> {
         `);
         for (let i = 0; i < PARTITION_COUNT; i++) {
             await trx.raw(`
-                CREATE TABLE "${TABLE}_p${i}" PARTITION OF "${TABLE}"
+                CREATE TABLE IF NOT EXISTS "${TABLE}_p${i}" PARTITION OF "${TABLE}"
                 FOR VALUES WITH (MODULUS ${PARTITION_COUNT}, REMAINDER ${i});
             `);
         }
         await knex.raw(`ALTER TABLE records ALTER COLUMN json DROP NOT NULL`);
+        await knex.raw(`ALTER TABLE records ADD COLUMN IF NOT EXISTS size_bytes integer`);
     });
 }
 

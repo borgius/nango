@@ -4,7 +4,7 @@ import tracer from 'dd-trace';
 
 import { Err, Ok, retry, stringToHash } from '@nangohq/utils';
 
-import { RECORDS_TABLE, RECORD_COUNTS_TABLE } from '../constants.js';
+import { RECORDS_DATA_TABLE, RECORDS_TABLE, RECORD_COUNTS_TABLE } from '../constants.js';
 import { Cursor } from '../cursor.js';
 import { db, dbRead } from '../db/client.js';
 import { envs } from '../env.js';
@@ -37,6 +37,7 @@ interface UpsertResult {
     id: string;
     last_modified_at: string;
     previous_last_modified_at: string | null;
+    needs_data_write: boolean;
     delta_size_bytes: number;
     status: 'inserted' | 'changed' | 'undeleted' | 'deleted' | 'unchanged';
 }
@@ -90,10 +91,7 @@ export async function getRecords({
         let query = dbRead
             .from<FormattedRecord>(RECORDS_TABLE)
             .timeout(60000) // timeout after 1 minute
-            .where({
-                connection_id: connectionId,
-                model
-            })
+            .where({ connection_id: connectionId, model })
             .orderBy([
                 { column: 'updated_at', order: 'asc' },
                 { column: 'id', order: 'asc' }
@@ -107,7 +105,7 @@ export async function getRecords({
             }
 
             // Tuple comparison for efficient index usage
-            query = query.whereRaw('(updated_at, id) > (?, ?)', [decodedCursor.sort, decodedCursor.id]);
+            query = query.whereRaw(`(updated_at, id) > (?, ?)`, [decodedCursor.sort, decodedCursor.id]);
         }
 
         if (externalIds) {
@@ -169,11 +167,11 @@ export async function getRecords({
             }
         }
 
-        const rawResults: FormattedRecordWithMetadata[] = await query.select(
+        const recordsMetadata: FormattedRecordWithMetadata[] = await query.select(
             // PostgreSQL stores timestamp with microseconds precision
             // however, javascript date only supports milliseconds precision
             // we therefore convert timestamp to string (using to_json()) in order to avoid precision loss
-            db.raw(`
+            dbRead.raw(`
                 tableoid::regclass as partition,
                 id,
                 external_id,
@@ -190,15 +188,24 @@ export async function getRecords({
             `)
         );
 
-        if (rawResults.length === 0) {
+        if (recordsMetadata.length === 0) {
             return Ok({ records: [], next_cursor: null });
         }
+
+        const recordIds = recordsMetadata.map((r) => r.id);
+        const recordsData = await dbRead
+            .from(RECORDS_DATA_TABLE)
+            .where({ connection_id: connectionId, model })
+            .whereIn('id', recordIds)
+            .select<{ id: string; data: FormattedRecord['json'] }[]>('id', 'data');
+        const dataById = new Map(recordsData.map((r) => [r.id, r.data]));
 
         const results: ReturnedRecord[] = [];
 
         // TODO: decrypt in batch
-        for (const item of rawResults) {
-            const decryptedData = await decryptRecordData(item);
+        for (const item of recordsMetadata) {
+            const data = dataById.get(item.id) ?? item.json ?? {};
+            const decryptedData = await decryptRecordData({ ...item, json: data });
             results.push({
                 ...decryptedData,
                 id: item.external_id, // record payload can be empty (when pruned), always use external_id as id
@@ -214,16 +221,16 @@ export async function getRecords({
         }
 
         // all records for the same connection/model are in the same partition
-        const partition = rawResults[0]?.partition;
+        const partition = recordsMetadata[0]?.partition;
         if (span && partition) {
             span.setTag('nango.partition', partition);
         }
 
         if (results.length > Number(limit || 100)) {
             results.pop();
-            rawResults.pop();
+            recordsMetadata.pop();
 
-            const cursorRawElement = rawResults[rawResults.length - 1];
+            const cursorRawElement = recordsMetadata[recordsMetadata.length - 1];
             if (cursorRawElement) {
                 const encodedCursorValue = Cursor.new(cursorRawElement);
                 return Ok({ records: results, next_cursor: encodedCursorValue });
@@ -351,46 +358,40 @@ export async function upsert({
                             )
                             .with('existing', (qb) => {
                                 qb.select(
+                                    `${RECORDS_TABLE}.id`,
                                     `${RECORDS_TABLE}.external_id`,
                                     `${RECORDS_TABLE}.deleted_at`,
                                     `${RECORDS_TABLE}.updated_at`,
-                                    trx.raw(`
-                                        CASE
-                                            WHEN incoming.data_hash IS DISTINCT FROM ${RECORDS_TABLE}.data_hash THEN pg_column_size(json)
-                                            ELSE 0
-                                        END as previous_size_bytes
-                                    `),
-                                    trx.raw(`incoming.data_hash IS DISTINCT FROM ${RECORDS_TABLE}.data_hash as has_changed`)
+                                    trx.raw(`incoming.data_hash IS DISTINCT FROM ${RECORDS_TABLE}.data_hash as has_changed`),
+                                    trx.raw(`(${RECORDS_TABLE}.json IS NOT NULL OR ${RECORDS_TABLE}.pruned_at IS NOT NULL) as must_upsert_data`),
+                                    trx.raw(`COALESCE(${RECORDS_TABLE}.size_bytes, pg_column_size(${RECORDS_TABLE}.json), 0) as prev_size_bytes`)
                                 )
                                     .from(RECORDS_TABLE)
-                                    .where({
-                                        connection_id: connectionId,
-                                        model
-                                    })
+                                    .where(`${RECORDS_TABLE}.connection_id`, '=', connectionId)
+                                    .where(`${RECORDS_TABLE}.model`, '=', model)
                                     .join('incoming', 'incoming.external_id', `${RECORDS_TABLE}.external_id`);
                             })
                             .with('upsert', (qb) => {
-                                qb.insert(encryptedRecords)
+                                qb.insert(
+                                    encryptedRecords.map((r) => ({
+                                        connection_id: r.connection_id,
+                                        model: r.model,
+                                        id: r.id,
+                                        external_id: r.external_id,
+                                        json: trx.raw(`NULL`), // record data is now stored in a separate table
+                                        data_hash: r.data_hash,
+                                        sync_id: r.sync_id,
+                                        sync_job_id: r.sync_job_id,
+                                        deleted_at: r.deleted_at,
+                                        pruned_at: null, // clear pruned_at when record is re-upserted
+                                        size_bytes: trx.raw('pg_column_size(?::jsonb)', [r.json]),
+                                        ...(r.updated_at ? { updated_at: r.updated_at } : {})
+                                    }))
+                                )
                                     .into(RECORDS_TABLE)
-                                    .onConflict(['connection_id', 'external_id', 'model'])
-                                    .merge({
-                                        json: trx.raw(
-                                            `CASE WHEN ${RECORDS_TABLE}.data_hash IS NOT DISTINCT FROM EXCLUDED.data_hash THEN ${RECORDS_TABLE}.json ELSE EXCLUDED.json END`
-                                        ),
-                                        data_hash: trx.raw(`EXCLUDED.data_hash`),
-                                        sync_id: trx.raw(`EXCLUDED.sync_id`),
-                                        sync_job_id: trx.raw(`EXCLUDED.sync_job_id`),
-                                        deleted_at: trx.raw(`EXCLUDED.deleted_at`),
-                                        ...(softDelete ? { updated_at: trx.raw(`EXCLUDED.updated_at`) } : {})
-                                    })
-                                    .returning([
-                                        'id',
-                                        'external_id',
-                                        'deleted_at',
-                                        'updated_at',
-                                        trx.raw('pg_column_size(json) as size_bytes'),
-                                        trx.raw('tableoid::regclass as partition')
-                                    ]);
+                                    .onConflict(['connection_id', 'model', 'external_id'])
+                                    .merge()
+                                    .returning(['id', 'external_id', 'deleted_at', 'updated_at', 'size_bytes', trx.raw('tableoid::regclass as partition')]);
                                 if (merging.strategy === 'ignore_if_modified_after_cursor' && merging.cursor) {
                                     const cursor = Cursor.from(merging.cursor);
                                     if (cursor) {
@@ -404,10 +405,8 @@ export async function upsert({
                                     upsert.id as id,
                                     upsert.external_id as external_id,
                                     to_json(upsert.updated_at) as last_modified_at,
-                                    CASE
-                                        WHEN NOT existing.has_changed THEN 0
-                                        ELSE upsert.size_bytes - COALESCE(existing.previous_size_bytes, 0)
-                                    END as delta_size_bytes,
+                                    COALESCE(existing.has_changed OR existing.must_upsert_data, true) as needs_data_write,
+                                    upsert.size_bytes - COALESCE(existing.prev_size_bytes, 0) as delta_size_bytes,
                                     CASE
                                       WHEN existing.updated_at IS NULL THEN NULL
                                       ELSE to_json(existing.updated_at)
@@ -429,6 +428,24 @@ export async function upsert({
                                 { column: 'upsert.updated_at', order: 'asc' },
                                 { column: 'upsert.id', order: 'asc' }
                             ]);
+
+                        // Upsert data for:
+                        // - changed/new records (has_changed)
+                        // - records whose payload is still in records.json (legacy migration)
+                        // - records whose payload was pruned and is being restored (pruned_at IS NOT NULL)
+                        const needsDataWriteIds = new Set(res.filter((r) => r.needs_data_write).map((r) => r.id));
+                        const recordsToUpdateData = encryptedRecords.filter((r) => needsDataWriteIds.has(r.id));
+
+                        if (recordsToUpdateData.length > 0) {
+                            await trx.raw(
+                                `INSERT INTO ${RECORDS_DATA_TABLE} (id, connection_id, model, data)
+                                VALUES ${recordsToUpdateData.map(() => '(?::uuid, ?::integer, ?::text, ?::jsonb)').join(', ')}
+                                ON CONFLICT (connection_id, model, id) DO UPDATE SET data = EXCLUDED.data`,
+                                recordsToUpdateData.flatMap((r) => [r.id, r.connection_id, r.model, r.json])
+                            );
+                        }
+
+                        const batchDeltaSizeInBytes = res.reduce((acc, r) => acc + r.delta_size_bytes, 0);
 
                         // Billing:
                         // A record is billed only once per month. ie:
@@ -474,9 +491,7 @@ export async function upsert({
                                 };
                             }
                         }
-                        deltaSizeInBytes += res.reduce((acc, r) => {
-                            return acc + r.delta_size_bytes;
-                        }, 0);
+                        deltaSizeInBytes += batchDeltaSizeInBytes;
 
                         // all records for the same connection/model are in the same partition
                         if (!partition && res[0]?.partition) {
@@ -601,28 +616,39 @@ export async function update({
                     const encryptedRecords = encryptRecords(recordsToUpdate);
                     const query = trx
                         .with('existing', (qb) => {
-                            qb.select('external_id', 'id', trx.raw('pg_column_size(json) as previous_size_bytes'), trx.raw('tableoid::regclass as partition'))
+                            qb.select(
+                                `${RECORDS_TABLE}.external_id`,
+                                `${RECORDS_TABLE}.id`,
+                                trx.raw(`COALESCE(${RECORDS_TABLE}.size_bytes, pg_column_size(${RECORDS_TABLE}.json), 0) as previous_size_bytes`),
+                                trx.raw(`${RECORDS_TABLE}.tableoid::regclass as partition`)
+                            )
                                 .from(RECORDS_TABLE)
-                                .where({
-                                    connection_id: connectionId,
-                                    model
-                                })
+                                .where(`${RECORDS_TABLE}.connection_id`, connectionId)
+                                .where(`${RECORDS_TABLE}.model`, model)
                                 .whereIn(
-                                    'external_id',
+                                    `${RECORDS_TABLE}.external_id`,
                                     encryptedRecords.map((r) => r.external_id)
                                 );
                         })
                         .with('upsert', (qb) => {
                             qb.from<{ external_id: string; id: string; last_modified_at: string }>(RECORDS_TABLE)
-                                .insert(encryptedRecords)
-                                .returning([
-                                    'external_id',
-                                    'id',
-                                    'updated_at',
-                                    trx.raw('pg_column_size(json) as size_bytes'),
-                                    trx.raw('tableoid::regclass as partition')
-                                ])
-                                .onConflict(['connection_id', 'external_id', 'model'])
+                                .insert(
+                                    encryptedRecords.map((r) => ({
+                                        connection_id: r.connection_id,
+                                        model: r.model,
+                                        id: r.id,
+                                        external_id: r.external_id,
+                                        json: trx.raw('NULL'),
+                                        data_hash: r.data_hash,
+                                        sync_id: r.sync_id,
+                                        sync_job_id: r.sync_job_id,
+                                        pruned_at: null, // clear pruned_at when record is updated
+                                        size_bytes: trx.raw('pg_column_size(?::jsonb)', [r.json]),
+                                        updated_at: r.updated_at
+                                    }))
+                                )
+                                .returning(['external_id', 'id', 'updated_at', 'size_bytes', trx.raw('tableoid::regclass as partition')])
+                                .onConflict(['connection_id', 'model', 'external_id'])
                                 .merge();
                             if (merging.strategy === 'ignore_if_modified_after_cursor' && merging.cursor) {
                                 const cursor = Cursor.from(merging.cursor);
@@ -631,14 +657,26 @@ export async function update({
                                 }
                             }
                         })
+                        .with('upsert_data', (qb) => {
+                            qb.insert(
+                                trx.raw(
+                                    `SELECT upsert.id, v.connection_id, v.model, v.data
+                                    FROM upsert
+                                    JOIN (VALUES ${encryptedRecords.map(() => '(?::uuid, ?::integer, ?::text, ?::jsonb)').join(', ')}) AS v(id, connection_id, model, data) ON v.id = upsert.id`,
+                                    encryptedRecords.flatMap((r) => [r.id, r.connection_id, r.model, r.json])
+                                )
+                            )
+                                .into(RECORDS_DATA_TABLE)
+                                .onConflict(['connection_id', 'model', 'id'])
+                                .merge(['data']);
+                        })
                         .select<
                             {
                                 partition: string;
                                 external_id: string;
                                 id: string;
                                 last_modified_at: string;
-                                previous_size_bytes: number;
-                                size_bytes: number;
+                                delta_size_bytes: number;
                             }[]
                         >(
                             trx.raw(`
@@ -646,8 +684,7 @@ export async function update({
                                 upsert.id as id,
                                 upsert.external_id as external_id,
                                 to_json(upsert.updated_at) as last_modified_at,
-                                existing.previous_size_bytes as previous_size_bytes,
-                                upsert.size_bytes as size_bytes`)
+                                upsert.size_bytes - COALESCE(existing.previous_size_bytes, 0) as delta_size_bytes`)
                         )
                         .from('upsert')
                         .join('existing', 'upsert.external_id', 'existing.external_id')
@@ -675,7 +712,7 @@ export async function update({
                             cursor: Cursor.new(lastRecord)
                         };
                     }
-                    deltaSizeInBytes += updated.reduce((acc, r) => acc + (r.size_bytes - (r.previous_size_bytes || 0)), 0);
+                    deltaSizeInBytes += updated.reduce((acc, r) => acc + r.delta_size_bytes, 0);
                     // all records for the same connection/model are in the same partition
                     if (!partition && updated[0]?.partition) {
                         partition = updated[0].partition;
@@ -793,37 +830,52 @@ export async function deleteRecords({
                 if (toDelete <= 0) {
                     break;
                 }
+
+                const targetIdsSubquery = () => {
+                    const subQuery = trx
+                        .select('id')
+                        .from(RECORDS_TABLE)
+                        .where({ connection_id: connectionId, model })
+                        .orderBy([
+                            { column: 'updated_at', order: 'asc' },
+                            { column: 'id', order: 'asc' }
+                        ])
+                        .limit(toDelete);
+                    if (decodedCursor) {
+                        // Delete records up to and including the cursor position
+                        subQuery.whereRaw('(updated_at, id) <= (?, ?)', [decodedCursor.sort, decodedCursor.id]);
+                    }
+                    if (mode === 'soft') {
+                        // only soft delete non-deleted records
+                        subQuery.whereNull('deleted_at');
+                    } else if (mode === 'prune') {
+                        // only prune non-pruned records
+                        subQuery.whereNull('pruned_at');
+                    }
+                    return subQuery;
+                };
+
+                // For hard/prune: read sizes before deletion
+                let sizeRows: { id: string; size_bytes: number }[] = [];
+                if (!dryRun && mode !== 'soft') {
+                    const preSizeResult = await trx.raw<{ rows: { id: string; size_bytes: number }[] }>(
+                        `SELECT id, COALESCE(size_bytes, pg_column_size(json), 0) as size_bytes
+                         FROM ${RECORDS_TABLE}
+                         WHERE connection_id = ? AND model = ? AND id = ANY(?)`,
+                        [connectionId, model, targetIdsSubquery()]
+                    );
+                    sizeRows = preSizeResult.rows;
+                }
+
                 // if hard mode, we permanently delete the records
-                // if soft mode, we update the deleted_at/updated_at fields
                 // if prune mode, we empty the record payload
+                // if soft mode, we update the deleted_at/updated_at fields
                 const query = trx
                     .from(RECORDS_TABLE)
                     .where({ connection_id: connectionId, model })
-                    .whereIn('id', function (sub) {
-                        const subQuery = sub
-                            .select('id')
-                            .from(RECORDS_TABLE)
-                            .where({ connection_id: connectionId, model })
-                            .orderBy([
-                                { column: 'updated_at', order: 'asc' },
-                                { column: 'id', order: 'asc' }
-                            ])
-                            .limit(toDelete);
-                        if (decodedCursor) {
-                            // Delete records up to and including the cursor position
-                            subQuery.whereRaw('(updated_at, id) <= (?, ?)', [decodedCursor.sort, decodedCursor.id]);
-                        }
-                        if (mode === 'soft') {
-                            // only soft delete non-deleted records
-                            subQuery.whereNull('deleted_at');
-                        } else if (mode === 'prune') {
-                            // only prune non-pruned records
-                            subQuery.whereNull('pruned_at');
-                        }
-                    })
-                    .returning<{ id: string; size_bytes: number; partition: string; updated_at: string }[]>([
+                    .whereIn('id', targetIdsSubquery())
+                    .returning<{ id: string; partition: string; updated_at: string }[]>([
                         'id',
-                        trx.raw('pg_column_size(json) as size_bytes'),
                         trx.raw('tableoid::regclass as partition'),
                         trx.raw('to_json(updated_at) as updated_at')
                     ]);
@@ -833,7 +885,8 @@ export async function deleteRecords({
                         case 'prune':
                             query.update({
                                 pruned_at: now,
-                                json: {} // empty the record payload
+                                json: null, // record data is stored in records_data, cleared on prune
+                                size_bytes: null // cleared so re-upsert after prune correctly uses 0 as prev size
                                 // IMPORTANT: updated_at isn't updated because it would cause the record cursor to also change
                             });
                             break;
@@ -851,9 +904,27 @@ export async function deleteRecords({
 
                 const res = await query;
 
+                const ids = res.map((r) => r.id);
+                if (ids.length > 0) {
+                    if (!dryRun && mode !== 'soft') {
+                        // Clean up records_data; sizes already captured in pre-read above
+                        await trx.from(RECORDS_DATA_TABLE).where({ connection_id: connectionId, model }).whereIn('id', ids).delete();
+                    } else {
+                        // For soft delete and dry run, data is still intact, read sizes now
+                        const sizeResult = await trx.raw<{ rows: { id: string; size_bytes: number }[] }>(
+                            `SELECT id, COALESCE(size_bytes, pg_column_size(json), 0) as size_bytes
+                             FROM ${RECORDS_TABLE}
+                             WHERE connection_id = ? AND model = ? AND id = ANY(?)`,
+                            [connectionId, model, ids]
+                        );
+                        sizeRows = sizeResult.rows;
+                    }
+                }
+                const sizeById = new Map(sizeRows.map((r) => [r.id, r.size_bytes]));
+
                 paginatedRecords = res.length;
                 totalRecords += paginatedRecords;
-                totalSizeInBytes += res.reduce((acc, r) => acc + r.size_bytes, 0);
+                totalSizeInBytes += ids.reduce((acc, id) => acc + (sizeById.get(id) ?? 0), 0);
                 if (!partition && res[0]?.partition) {
                     partition = res[0].partition;
                 }
@@ -944,7 +1015,7 @@ export async function deleteOutdatedRecords({
                         const res: { external_id: string; size_bytes: number; partition: string }[] = (
                             await trx.raw(
                                 `WITH to_delete AS MATERIALIZED (
-                                    SELECT ctid
+                                    SELECT ctid, id
                                     FROM ${RECORDS_TABLE}
                                     WHERE connection_id = ?
                                       AND model = ?
@@ -961,7 +1032,7 @@ export async function deleteOutdatedRecords({
                                 WHERE r.ctid = to_delete.ctid
                                   AND r.connection_id = ?
                                   AND r.model = ?
-                                RETURNING external_id, pg_column_size(json) as size_bytes, tableoid::regclass as partition`,
+                                RETURNING r.external_id, COALESCE(r.size_bytes, pg_column_size(r.json), 0) as size_bytes, r.tableoid::regclass as partition`,
                                 [connectionId, model, generation, batchSize, generation, connectionId, model]
                             )
                         ).rows;
@@ -1262,15 +1333,18 @@ async function getRecordsToUpdate({
     const keysWithHash: [string, string][] = records.map((record: FormattedRecord) => [getUniqueId(record), record.data_hash]);
 
     return trx
-        .select<FormattedRecord[]>('*')
+        .select<FormattedRecord[]>(`${RECORDS_TABLE}.*`, trx.raw(`COALESCE(${RECORDS_DATA_TABLE}.data, ${RECORDS_TABLE}.json) as json`))
         .from(RECORDS_TABLE)
-        .where({
-            connection_id: connectionId,
-            model
+        .leftJoin(RECORDS_DATA_TABLE, function () {
+            this.on(`${RECORDS_DATA_TABLE}.connection_id`, '=', `${RECORDS_TABLE}.connection_id`)
+                .andOn(`${RECORDS_DATA_TABLE}.model`, '=', `${RECORDS_TABLE}.model`)
+                .andOn(`${RECORDS_DATA_TABLE}.id`, '=', `${RECORDS_TABLE}.id`);
         })
-        .whereNull('deleted_at') // only non-deleted records can be updated
-        .whereIn('external_id', keys)
-        .whereNotIn(['external_id', 'data_hash'], keysWithHash);
+        .where(`${RECORDS_TABLE}.connection_id`, connectionId)
+        .where(`${RECORDS_TABLE}.model`, model)
+        .whereNull(`${RECORDS_TABLE}.deleted_at`)
+        .whereIn(`${RECORDS_TABLE}.external_id`, keys)
+        .whereNotIn([`${RECORDS_TABLE}.external_id`, `${RECORDS_TABLE}.data_hash`], keysWithHash);
 }
 
 function newLockId(connectionId: number, model: string): bigint {
