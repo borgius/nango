@@ -12,7 +12,7 @@ import {
     secretService,
     syncManager
 } from '@nangohq/shared';
-import { Err, Ok, getLogger, isHosted, report } from '@nangohq/utils';
+import { Err, Ok, getLogger, isHosted, isNangoLocal, report } from '@nangohq/utils';
 import { sendAuth as sendAuthWebhook } from '@nangohq/webhooks';
 
 import { pubsub } from '../pubsub.js';
@@ -58,7 +58,7 @@ export const connectionCreationStartCapCheck = async ({
     plan: DBPlan;
     creationType: 'create' | 'import';
 }): Promise<{ capped: boolean }> => {
-    if (plan.connections_max === null) {
+    if (plan.connections_max === null || isNangoLocal) {
         return { capped: false };
     }
 

@@ -4,7 +4,7 @@ import db from '@nangohq/database';
 import * as keystore from '@nangohq/keystore';
 import { defaultOperationExpiration, endUserToMeta, logContextGetter } from '@nangohq/logs';
 import { EndUserMapper, buildTagsFromEndUser, configService } from '@nangohq/shared';
-import { connectUrl, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
+import { connectUrl, isNangoLocal, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
 
 import { connectionTagsSchema, endUserSchema, providerConfigKeySchema } from '../../helpers/validation.js';
 import * as connectSessionService from '../../services/connectSession.service.js';
@@ -167,7 +167,7 @@ export async function generateSession(res: Response<any, Required<RequestLocals>
                 };
             }
 
-            const canOverrideDocsConnectUrl = plan?.can_override_docs_connect_url ?? false;
+            const canOverrideDocsConnectUrl = isNangoLocal || (plan?.can_override_docs_connect_url ?? false);
             const isOverridingDocsConnectUrl = Object.values(body.overrides || {}).some((value) => value.docs_connect);
             if (isOverridingDocsConnectUrl && !canOverrideDocsConnectUrl) {
                 return {

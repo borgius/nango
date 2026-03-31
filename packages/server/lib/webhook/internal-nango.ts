@@ -1,6 +1,7 @@
 import get from 'lodash-es/get.js';
 
 import { connectionService, getSyncConfigsByConfigIdForWebhook } from '@nangohq/shared';
+import { isNangoLocal } from '@nangohq/utils';
 
 import { envs } from '../env.js';
 import { getOrchestrator } from '../utils/utils.js';
@@ -87,7 +88,7 @@ export class InternalNango {
         }
 
         // Disable executions of webhooks but we still need to return the connection ids
-        if (this.plan && !this.plan.has_webhooks_script) {
+        if (this.plan && !this.plan.has_webhooks_script && !isNangoLocal) {
             const connectionMetadata = connections.reduce<Record<string, Metadata | null>>((acc, connection) => {
                 acc[connection.connection_id] = 'metadata' in connection ? connection.metadata : null;
                 return acc;

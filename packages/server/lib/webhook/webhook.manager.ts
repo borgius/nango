@@ -2,7 +2,7 @@ import tracer from 'dd-trace';
 
 import db from '@nangohq/database';
 import { NangoError, externalWebhookService, getProvider, secretService } from '@nangohq/shared';
-import { Err, getLogger } from '@nangohq/utils';
+import { Err, getLogger, isNangoLocal } from '@nangohq/utils';
 import { forwardWebhook } from '@nangohq/webhooks';
 
 import * as webhookHandlers from './index.js';
@@ -105,7 +105,8 @@ export async function routeWebhook({
 
     // Only forward webhook if there is no capping and the response was successful
     const cappingStatus = await capping.getStatus(plan || null, 'webhook_forwards');
-    if (!cappingStatus.isCapped && res.statusCode === 200 && ((plan && plan.has_webhooks_forward) || !plan)) {
+    const canForwardWebhook = !plan || plan.has_webhooks_forward || isNangoLocal;
+    if (!cappingStatus.isCapped && res.statusCode === 200 && canForwardWebhook) {
         const webhookBodyToForward = 'toForward' in res ? res.toForward : body;
         const connectionIds = 'connectionIds' in res ? res.connectionIds : [];
 

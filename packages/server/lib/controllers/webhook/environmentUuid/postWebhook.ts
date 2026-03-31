@@ -4,7 +4,7 @@ import * as z from 'zod';
 import db from '@nangohq/database';
 import { logContextGetter } from '@nangohq/logs';
 import { accountService, configService, getPlan, getProvider } from '@nangohq/shared';
-import { flagHasPlan, metrics, zodErrorToHTTP } from '@nangohq/utils';
+import { flagHasPlan, isNangoLocal, metrics, zodErrorToHTTP } from '@nangohq/utils';
 
 import { providerConfigKeySchema } from '../../../helpers/validation.js';
 import { asyncWrapper } from '../../../utils/asyncWrapper.js';
@@ -66,7 +66,7 @@ export const postWebhook = asyncWrapper<PostPublicWebhook>(async (req, res) => {
                 }
 
                 plan = resPlan.value;
-                if (!plan.has_webhooks_forward && !plan.has_webhooks_script) {
+                if (!plan.has_webhooks_forward && !plan.has_webhooks_script && !isNangoLocal) {
                     res.status(404).send({ error: { code: 'feature_disabled', message: 'Feature disabled for this account' } });
                     return;
                 }
