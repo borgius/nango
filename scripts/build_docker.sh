@@ -24,7 +24,7 @@ fi
 # Move to here no matter where the file was executed
 cd "$(dirname "$0")"
 
-tags="-t nangohq/nango:${GIT_HASH}"
+tags="-t borgius/nango:${GIT_HASH}"
 
 if [ $ACTION == 'build' ]; then
   tags+=" --output=type=docker"
@@ -33,7 +33,7 @@ else
 fi
 
 echo ""
-echo -e "Building nangohq/nango\n"
+echo -e "Building borgius/nango\n"
 
 docker buildx build \
   --platform linux/amd64 \

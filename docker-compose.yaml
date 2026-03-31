@@ -16,7 +16,7 @@ services:
 
     nango-server:
         # It's recommended to pin the version using the commit hash tag or a version tag
-        # https://hub.docker.com/r/nangohq/nango-server/tags
+        # https://hub.docker.com/r/borgius/nango-server/tags
         image: borgius/nango-server:hosted
         container_name: nango-server
         platform: linux/amd64
