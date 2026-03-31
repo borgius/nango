@@ -2,11 +2,6 @@ name: '[Release] Managed Nango Release'
 
 on:
     workflow_dispatch:
-        inputs:
-            commit_hash:
-                description: 'Commit hash to release'
-                required: true
-                type: string
 
 permissions:
     contents: write

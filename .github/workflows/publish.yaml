@@ -3,12 +3,6 @@ run-name: '[Release] NPM publish ${{ inputs.version }}'
 
 on:
     workflow_dispatch:
-        inputs:
-            version:
-                type: string
-                description: 'Version to publish'
-                required: true
-                default: '0.0.0'
 
 permissions:
     contents: write

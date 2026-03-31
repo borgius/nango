@@ -1,12 +1,7 @@
 name: Docker Check
 
 on:
-    push:
-        branches:
-            - master
-            - staging/**
-    pull_request:
-    merge_group:
+    workflow_dispatch:
 
 concurrency:
     group: docker-${{ github.event.pull_request.number || github.ref }}

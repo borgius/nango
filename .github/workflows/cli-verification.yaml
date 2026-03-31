@@ -1,12 +1,7 @@
 name: CLI Publish & Verify
 
 on:
-    push:
-        branches:
-            - master
-            - staging/**
-    pull_request:
-    merge_group:
+    workflow_dispatch:
 
 concurrency:
     group: verify-cli-${{ github.event.pull_request.number || github.ref }}

@@ -1,8 +1,6 @@
 name: Close inactive issues/PRs
 on:
-    schedule:
-        # Run once a day at 16:00 UTC
-        - cron: '0 16 * * *'
+    workflow_dispatch:
 
 jobs:
     close-issues:
