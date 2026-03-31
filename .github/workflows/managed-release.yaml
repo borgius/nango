@@ -95,19 +95,19 @@ jobs:
                   kubectl apply -f nango-secrets.yaml
 
                   # Add the Nango Helm repository
-                  helm repo add nangohq https://nangohq.github.io/nango-helm-charts
+                  helm repo add borgius https://borgius.github.io/nango-helm-charts
                   helm repo update
 
                   # Debug: Show available charts
-                  echo "Available charts in nangohq repo:"
-                  helm search repo nangohq
+                  echo "Available charts in borgius repo:"
+                  helm search repo borgius
 
                   # Install Nango using Helm in background
                   echo "Installing Helm chart..."
                   echo "commit_hash: ${{ inputs.commit_hash }}"
 
                   # Debug: Show the exact command
-                  HELM_CMD="helm upgrade --install nango nangohq/nango --version 1.1.5 --namespace nango --create-namespace --set shared.namespace=nango --set shared.tag=\"${{ inputs.commit_hash }}\" --set shared.encryptionEnabled=true --set shared.NANGO_SERVER_URL=\"http://localhost:3003\" --set shared.NANGO_CALLBACK_URL=\"http://localhost:3003/oauth/callback\" --set shared.NANGO_LOGS_ENABLED=false --set server.useLoadBalancer=false --set server.RECORDS_DATABASE_SSL=false --set elasticsearch.enabled=false --set postgresql.auth.postgresPassword=nango123 --set postgresql.image.repository=bitnamilegacy/postgresql --set postgresql.image.tag=16.1.0-debian-11-r9 --wait=false"
+                  HELM_CMD="helm upgrade --install nango borgius/nango --version 1.1.5 --namespace nango --create-namespace --set shared.namespace=nango --set shared.tag=\"${{ inputs.commit_hash }}\" --set shared.encryptionEnabled=true --set shared.NANGO_SERVER_URL=\"http://localhost:3003\" --set shared.NANGO_CALLBACK_URL=\"http://localhost:3003/oauth/callback\" --set shared.NANGO_LOGS_ENABLED=false --set server.useLoadBalancer=false --set server.RECORDS_DATABASE_SSL=false --set elasticsearch.enabled=false --set postgresql.auth.postgresPassword=nango123 --set postgresql.image.repository=bitnamilegacy/postgresql --set postgresql.image.tag=16.1.0-debian-11-r9 --wait=false"
                   echo "Executing: $HELM_CMD"
 
                   # Execute the command
@@ -371,11 +371,11 @@ jobs:
               if: ${{ env.ACT }}
               run: |
                   echo "Running in act - would perform Docker operations:"
-                  echo "Would pull: nangohq/nango:${{ needs.manage-versions.outputs.commit_hash }}"
+                  echo "Would pull: borgius/nango:${{ needs.manage-versions.outputs.commit_hash }}"
                   if [ "${{ needs.test-deployment.outputs.status }}" = "failure" ]; then
-                    echo "Would tag as: nangohq/nango:managed-${{ steps.bump-major.outputs.image_version }}-${{ steps.bump-major.outputs.app_version }}-${{ needs.manage-versions.outputs.commit_hash }}"
+                    echo "Would tag as: borgius/nango:managed-${{ steps.bump-major.outputs.image_version }}-${{ steps.bump-major.outputs.app_version }}-${{ needs.manage-versions.outputs.commit_hash }}"
                   else
-                    echo "Would tag as: nangohq/nango:managed-${{ needs.manage-versions.outputs.image_version }}-${{ needs.manage-versions.outputs.app_version }}-${{ needs.manage-versions.outputs.commit_hash }}"
+                    echo "Would tag as: borgius/nango:managed-${{ needs.manage-versions.outputs.image_version }}-${{ needs.manage-versions.outputs.app_version }}-${{ needs.manage-versions.outputs.commit_hash }}"
                   fi
 
             - name: Retag and push final image
@@ -383,7 +383,7 @@ jobs:
               if: ${{ !env.ACT }}
               run: |
                   echo "Pulling image..."
-                  docker pull nangohq/nango:${{ needs.manage-versions.outputs.commit_hash }}
+                  docker pull borgius/nango:${{ needs.manage-versions.outputs.commit_hash }}
 
                   if [ "${{ needs.test-deployment.outputs.status }}" = "failure" ]; then
                       echo "Test deployment failed, using bumped major version"
@@ -393,8 +393,8 @@ jobs:
                       IMAGE_TAG="managed-${{ needs.manage-versions.outputs.image_version }}-${{ needs.manage-versions.outputs.app_version }}-${{ needs.manage-versions.outputs.commit_hash }}"
                   fi
 
-                  docker tag nangohq/nango:${{ needs.manage-versions.outputs.commit_hash }} nangohq/nango:${IMAGE_TAG}
-                  docker push nangohq/nango:${IMAGE_TAG}
+                  docker tag borgius/nango:${{ needs.manage-versions.outputs.commit_hash }} borgius/nango:${IMAGE_TAG}
+                  docker push borgius/nango:${IMAGE_TAG}
 
                   echo "tag_name=${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
