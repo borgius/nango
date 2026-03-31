@@ -1,12 +1,7 @@
 name: Run Client Tests
 
 on:
-    push:
-        branches:
-            - master
-            - staging/**
-    pull_request:
-    merge_group:
+    workflow_dispatch:
 
 jobs:
     should-run:

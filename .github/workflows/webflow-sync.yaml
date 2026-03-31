@@ -1,22 +1,7 @@
 name: Webflow Sync
 
 on:
-    push:
-        branches:
-            - master
-        paths:
-            - packages/providers/providers.yaml
-            - docs/integrations/all/*.md
-            - packages/shared/flows.yaml
     workflow_dispatch:
-        inputs:
-            force_update:
-                description: 'Force update all providers regardless of changes'
-                required: false
-                default: 'false'
-                type: boolean
-    schedule:
-        - cron: '0 0 1 * *'
 
 concurrency:
     group: webflow-sync
