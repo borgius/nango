@@ -2,7 +2,7 @@ import * as z from 'zod';
 
 import db from '@nangohq/database';
 import { environmentService, externalWebhookService, getPlan } from '@nangohq/shared';
-import { flagHasPlan, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
+import { flagHasPlan, isNangoLocal, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
 
 import { envSchema } from '../../../helpers/validation.js';
 import { asyncWrapper } from '../../../utils/asyncWrapper.js';
@@ -33,7 +33,7 @@ export const postEnvironment = asyncWrapper<PostEnvironment>(async (req, res) =>
     const accountId = res.locals.account.id;
     const environments = await environmentService.getEnvironmentsByAccountId(accountId);
 
-    if (flagHasPlan) {
+    if (flagHasPlan && !isNangoLocal) {
         const planRes = await getPlan(db.knex, { accountId });
         if (planRes.isErr()) {
             res.status(500).send({ error: { code: 'server_error', message: 'Unable to get plan' } });

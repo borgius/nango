@@ -3,7 +3,7 @@ import * as z from 'zod';
 import db from '@nangohq/database';
 import { logContextGetter } from '@nangohq/logs';
 import { configService, deployTemplate, flowService, productTracking, startTrial, syncManager } from '@nangohq/shared';
-import { requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
+import { isNangoLocal, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
 
 import { providerConfigKeySchema, providerSchema, scriptNameSchema } from '../../../../helpers/validation.js';
 import { asyncWrapper } from '../../../../utils/asyncWrapper.js';
@@ -49,11 +49,11 @@ export const postPreBuiltDeploy = asyncWrapper<PostPreBuiltDeploy>(async (req, r
         return;
     }
 
-    if (plan && plan.trial_end_at && plan.trial_end_at.getTime() < Date.now()) {
+    if (!isNangoLocal && plan && plan.trial_end_at && plan.trial_end_at.getTime() < Date.now()) {
         res.status(400).send({ error: { code: 'plan_limit', message: "Can't enable more script, upgrade or extend your trial period" } });
         return;
     }
-    if (plan && !plan.trial_end_at && plan.auto_idle) {
+    if (!isNangoLocal && plan && !plan.trial_end_at && plan.auto_idle) {
         await startTrial(db.knex, plan);
         productTracking.track({ name: 'account:trial:started', team: account, user });
     }

@@ -3,7 +3,7 @@ import tracer from 'dd-trace';
 import db from '@nangohq/database';
 import { Cursor, records } from '@nangohq/records';
 import { getPlan } from '@nangohq/shared';
-import { cancellableDaemon, flagHasPlan } from '@nangohq/utils';
+import { cancellableDaemon, flagHasPlan, isNangoLocal } from '@nangohq/utils';
 
 import { envs } from '../env.js';
 import { logger } from '../logger.js';
@@ -42,7 +42,7 @@ export function autoPruningDaemon(): Awaited<ReturnType<typeof cancellableDaemon
                             logger.error(`[Auto-pruning] failed to get plan: ${plan.error.message}`);
                             return;
                         }
-                        if (!plan.value.has_records_autopruning) {
+                        if (!plan.value.has_records_autopruning && !isNangoLocal) {
                             span?.addTags({ pruned: 0, has_records_autopruning: false });
                             logger.info(`[Auto-pruning] skipping pruning as feature not in plan for account: ${plan.value.account_id}`);
                             return;

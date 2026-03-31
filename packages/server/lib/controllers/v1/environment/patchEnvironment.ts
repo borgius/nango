@@ -2,7 +2,7 @@ import * as z from 'zod';
 
 import { permissions } from '@nangohq/authz';
 import { PROD_ENVIRONMENT_NAME, environmentService } from '@nangohq/shared';
-import { flagHasPlan, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
+import { flagHasPlan, isNangoLocal, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
 
 import { resolve } from '../../../authz/resolve.js';
 import { environmentToApi } from '../../../formatters/environment.js';
@@ -89,7 +89,7 @@ export const patchEnvironment = asyncWrapper<PatchEnvironment>(async (req, res) 
         data.otlp_settings = { endpoint: '', ...environment.otlp_settings, headers };
     }
 
-    if (data.otlp_settings && flagHasPlan) {
+    if (data.otlp_settings && flagHasPlan && !isNangoLocal) {
         if (!plan!.has_otel) {
             res.status(403).send({ error: { code: 'forbidden', message: 'OpenTelemetry export is not enabled for this account' } });
             return;

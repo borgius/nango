@@ -2,7 +2,7 @@ import db from '@nangohq/database';
 import { getLocking } from '@nangohq/kvstore';
 import { logContextGetter } from '@nangohq/logs';
 import { NangoError, cleanIncomingFlow, deploy, errorManager, getAndReconcileDifferences, productTracking, startTrial } from '@nangohq/shared';
-import { requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
+import { isNangoLocal, requireEmptyQuery, zodErrorToHTTP } from '@nangohq/utils';
 
 import { validationWithNangoYaml as validation } from './validation.js';
 import { asyncWrapper } from '../../../utils/asyncWrapper.js';
@@ -66,7 +66,7 @@ export const postDeploy = asyncWrapper<PostDeploy>(async (req, res) => {
         orchestrator
     });
 
-    if (plan && !plan.trial_end_at && plan.auto_idle) {
+    if (!isNangoLocal && plan && !plan.trial_end_at && plan.auto_idle) {
         await startTrial(db.knex, plan);
         productTracking.track({ name: 'account:trial:started', team: account });
     }
