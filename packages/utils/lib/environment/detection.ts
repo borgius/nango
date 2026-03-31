@@ -4,7 +4,7 @@ export const baseUrl = process.env['NANGO_SERVER_URL'] || localhostUrl;
 export const basePublicUrl = process.env['NANGO_PUBLIC_SERVER_URL'] || baseUrl;
 export const connectUrl = process.env['NANGO_PUBLIC_CONNECT_URL'] || 'http://localhost:3009';
 
-export const isNargoLocal = process.env['NARGO_LOCAL'] === '1';
+export const isNangoLocal = process.env['NANGO_LOCAL'] === '1';
 export const isDocker = process.env['SERVER_RUN_MODE'] === 'DOCKERIZED';
 export const isStaging = process.env['NODE_ENV'] === NodeEnv.Staging;
 export const isProd = process.env['NODE_ENV'] === NodeEnv.Prod;
@@ -23,10 +23,10 @@ export const useS3 = Boolean(
 );
 export const integrationFilesAreRemote = isEnterprise && useS3;
 
-export const flagHasScripts = isLocal || isEnterprise || isCloud || isTest || isNargoLocal;
+export const flagHasScripts = isLocal || isEnterprise || isCloud || isTest || isNangoLocal;
 export const flagHasAuth = process.env['FLAG_AUTH_ENABLED'] !== 'false';
 export const flagHasManagedAuth =
-    (process.env['FLAG_MANAGED_AUTH_ENABLED'] === 'true' || isNargoLocal) && Boolean(process.env['WORKOS_API_KEY'] && process.env['WORKOS_CLIENT_ID']);
+    (process.env['FLAG_MANAGED_AUTH_ENABLED'] === 'true' || isNangoLocal) && Boolean(process.env['WORKOS_API_KEY'] && process.env['WORKOS_CLIENT_ID']);
 export const flagHasAPIRateLimit = process.env['FLAG_API_RATE_LIMIT_ENABLED'] !== 'false';
 export const flagHasBigQuery = process.env['FLAG_BIG_QUERY_EXPORT_ENABLED'] === 'true';
 export const flagHasSlack = !isHosted;
@@ -36,5 +36,5 @@ export const flagEnforceCLIVersion = process.env['FLAG_ENFORCE_CLI_VERSION'] ===
 // It's an object because we want to be able to mock it in tests
 export const flags = {
     hasAdminCapabilities: Boolean(process.env['NANGO_ADMIN_UUID']),
-    hasAuthRoles: process.env['FLAG_AUTH_ROLES_ENABLED'] === 'true' || isNargoLocal
+    hasAuthRoles: process.env['FLAG_AUTH_ROLES_ENABLED'] === 'true' || isNangoLocal
 };

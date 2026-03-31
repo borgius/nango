@@ -1,4 +1,4 @@
-import { Err, Ok, flagHasPlan, isEnterprise, isHosted, isNargoLocal } from '@nangohq/utils';
+import { Err, Ok, flagHasPlan, isEnterprise, isHosted, isNangoLocal } from '@nangohq/utils';
 
 import type { ConnectUISettings, DBConnectUISettings, DBPlan, Result } from '@nangohq/types';
 import type { Knex } from 'knex';
@@ -19,7 +19,7 @@ const defaultConnectUISettings: ConnectUISettings = {
 export function getDefaultConnectUISettings(): ConnectUISettings {
     return {
         ...defaultConnectUISettings,
-        showWatermark: isEnterprise || isNargoLocal ? false : true
+        showWatermark: isEnterprise || isNangoLocal ? false : true
     };
 }
 
@@ -85,7 +85,7 @@ export async function upsertConnectUISettings(db: Knex, environmentId: number, s
 
 export function canCustomizeConnectUITheme(plan?: DBPlan | null): boolean {
     if (!flagHasPlan || !plan) {
-        return isEnterprise || isNargoLocal;
+        return isEnterprise || isNangoLocal;
     }
 
     return plan.can_customize_connect_ui_theme;
@@ -93,7 +93,7 @@ export function canCustomizeConnectUITheme(plan?: DBPlan | null): boolean {
 
 export function canDisableConnectUIWatermark(plan?: DBPlan | null): boolean {
     if (!flagHasPlan || !plan) {
-        return isHosted || isEnterprise || isNargoLocal;
+        return isHosted || isEnterprise || isNangoLocal;
     }
 
     return plan.can_disable_connect_ui_watermark;
