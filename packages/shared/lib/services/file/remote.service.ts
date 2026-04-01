@@ -51,7 +51,11 @@ class RemoteFileService {
             this.useS3 = !isLocal && !isTest;
         }
         const credentials = getCredentials();
+        const endpoint = process.env['AWS_ENDPOINT_URL_S3'] || process.env['AWS_ENDPOINT_URL'];
+        const forcePathStyle = process.env['AWS_S3_FORCE_PATH_STYLE'] === 'true';
         const config: S3ClientConfig = credentials ? { region, credentials } : { region };
+        if (endpoint) config.endpoint = endpoint;
+        if (forcePathStyle) config.forcePathStyle = true;
         this.client = new S3Client(config);
     }
 
