@@ -1,6 +1,7 @@
 import { isTest } from '@nangohq/utils';
 
 import { createCursor, parseCursor } from './helpers.js';
+import { envs } from '../env.js';
 import { client } from '../es/client.js';
 import { indexMessages } from '../es/schema.js';
 
@@ -14,6 +15,8 @@ export interface ListMessages {
     cursorBefore: string | null;
 }
 
+const isOpenSearch = envs.NANGO_LOGS_ES_TYPE === 'opensearch';
+
 /**
  * Create one message
  * /!\ They are inserted without an ID to improve indexing time
@@ -24,7 +27,8 @@ export async function createMessage(row: MessageRow): Promise<{ index: string }>
         index: indexMessages.index,
         document: row,
         refresh: isTest,
-        pipeline: `daily.${indexMessages.index}`
+        // OpenSearch does not support the date_index_name ingest pipeline processor
+        ...(isOpenSearch ? {} : { pipeline: `daily.${indexMessages.index}` })
     });
     return { index: res._index };
 }

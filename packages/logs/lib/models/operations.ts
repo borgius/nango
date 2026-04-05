@@ -1,6 +1,7 @@
 import { isTest } from '@nangohq/utils';
 
 import { createCursor, getFullIndexName, parseCursor } from './helpers.js';
+import { envs } from '../env.js';
 import { client } from '../es/client.js';
 import { indexOperations } from '../es/schema.js';
 import { ResponseError } from '../utils.js';
@@ -27,6 +28,8 @@ export interface ListFilters {
     items: { key: string; doc_count: number }[];
 }
 
+const isOpenSearch = envs.NANGO_LOGS_ES_TYPE === 'opensearch';
+
 /**
  * Create one operation
  */
@@ -36,7 +39,8 @@ export async function createOperation(row: OperationRow): Promise<{ index: strin
         id: row.id,
         document: row,
         refresh: isTest,
-        pipeline: `daily.${indexOperations.index}`
+        // OpenSearch does not support the date_index_name ingest pipeline processor
+        ...(isOpenSearch ? {} : { pipeline: `daily.${indexOperations.index}` })
     });
     return { index: res._index };
 }

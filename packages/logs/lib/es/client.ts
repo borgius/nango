@@ -1,19 +1,42 @@
-import { Client } from '@elastic/elasticsearch';
+import { Client as ESClient } from '@elastic/elasticsearch';
+import { Client as OSClient } from '@opensearch-project/opensearch';
 
 import { envs } from '../env.js';
 import { CircuitBreaker } from './circuitBreaker.js';
 
-const rawClient = new Client({
-    nodes: envs.NANGO_LOGS_ES_URL || 'http://localhost:0',
-    requestTimeout: envs.NANGO_LOGS_ES_REQUEST_TIMEOUT_MS,
-    maxRetries: envs.NANGO_LOGS_ES_MAX_RETRIES,
-    auth: {
-        username: envs.NANGO_LOGS_ES_USER!, // ggignore
-        password: envs.NANGO_LOGS_ES_PWD! // ggignore
-    }
-});
+// Both clients expose the same REST-compatible surface for the operations used here.
+// We keep `ESClient` as the shared type alias since its typings cover the full API.
+type SearchClient = ESClient;
 
-function withCircuitBreaker(target: Client): Client {
+function createESClient(): SearchClient {
+    return new ESClient({
+        nodes: envs.NANGO_LOGS_ES_URL || 'http://localhost:0',
+        requestTimeout: envs.NANGO_LOGS_ES_REQUEST_TIMEOUT_MS,
+        maxRetries: envs.NANGO_LOGS_ES_MAX_RETRIES,
+        auth: {
+            username: envs.NANGO_LOGS_ES_USER!, // ggignore
+            password: envs.NANGO_LOGS_ES_PWD! // ggignore
+        }
+    });
+}
+
+function createOSClient(): SearchClient {
+    const osClient = new OSClient({
+        nodes: envs.NANGO_LOGS_ES_URL || 'http://localhost:0',
+        requestTimeout: envs.NANGO_LOGS_ES_REQUEST_TIMEOUT_MS,
+        maxRetries: envs.NANGO_LOGS_ES_MAX_RETRIES,
+        auth: {
+            username: envs.NANGO_LOGS_ES_USER!, // ggignore
+            password: envs.NANGO_LOGS_ES_PWD! // ggignore
+        }
+    });
+    // Cast to SearchClient – API surface is REST-compatible for all operations used in this package
+    return osClient as unknown as SearchClient;
+}
+
+const rawClient: SearchClient = envs.NANGO_LOGS_ES_TYPE === 'opensearch' ? createOSClient() : createESClient();
+
+function withCircuitBreaker(target: SearchClient): SearchClient {
     const circuitBreaker = new CircuitBreaker({
         healthCheck: async () => {
             try {
@@ -37,7 +60,7 @@ function withCircuitBreaker(target: Client): Client {
 
             return async function (...args: any[]) {
                 if (circuitBreaker.isUnhealthy()) {
-                    throw new Error('Elasticsearch circuit breaker is unhealthy  - failing fast');
+                    throw new Error('Search backend circuit breaker is unhealthy - failing fast');
                 }
 
                 if (prop === 'close') {

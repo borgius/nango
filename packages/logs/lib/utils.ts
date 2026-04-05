@@ -1,7 +1,9 @@
-import { errors } from '@elastic/elasticsearch';
+import { errors as ESErrors } from '@elastic/elasticsearch';
+import { errors as OSErrors } from '@opensearch-project/opensearch';
 
 import { getLogger } from '@nangohq/utils';
 
+import { envs } from './env.js';
 import { client } from './es/client.js';
 
 export const logger = getLogger('logs');
@@ -23,4 +25,8 @@ export const logLevelToLogger = {
     silly: 'debug'
 } as const;
 
-export const ResponseError = errors.ResponseError;
+// Use the ResponseError from the configured backend (ES or OpenSearch).
+// Both classes have a compatible interface – cast to ES type to keep downstream
+// code unchanged.
+export const ResponseError =
+    envs.NANGO_LOGS_ES_TYPE === 'opensearch' ? (OSErrors.ResponseError as unknown as typeof ESErrors.ResponseError) : ESErrors.ResponseError;
