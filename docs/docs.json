@@ -188,6 +188,7 @@
               "guides/platform/limits",
               "guides/platform/security",
               "guides/platform/self-hosting",
+              "guides/platform/cloudflare-workers",
               {
                 "group": "Other guides",
                 "pages": [

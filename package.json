@@ -21,6 +21,7 @@
         "docker-build:unified": "./scripts/build_docker.sh",
         "build:hosted": "npm ci && npm run ts-build && npm run webapp-build && npm run connect-ui:build",
         "build:prod": "npm ci && npm run ts-build && npm run webapp-build",
+        "deploy:platform": "tsx ./scripts/cloudflare/deploy.ts",
         "server:dev:watch": "cd ./packages/server && npm run dev",
         "jobs:dev:watch": "npm run dev -w @nangohq/nango-jobs",
         "persist:dev:watch": "npm run dev -w @nangohq/nango-persist",

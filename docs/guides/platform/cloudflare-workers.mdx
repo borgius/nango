@@ -1,0 +1,38 @@
+---
+title: 'Cloudflare Workers deployment'
+sidebarTitle: 'Cloudflare Workers'
+description: 'Investigation notes and bootstrap flow for a Cloudflare-native deployment target.'
+---
+
+Nango does not yet run natively on Cloudflare Workers, but this repository now includes a bootstrap flow for provisioning Cloudflare-native replacements for the main self-hosted dependencies and capturing the required resource manifest.
+
+## Native service mapping
+
+| Existing dependency | Cloudflare-native replacement |
+| --- | --- |
+| Postgres | D1 |
+| Redis | KV |
+| Object storage | R2 |
+| Job queue | Queues |
+
+## Current scope
+
+The bootstrap script provisions the native Cloudflare resources above and writes a `cloudflare.resources.json` manifest that can be used by a future Workers runtime migration.
+
+It does **not** yet migrate the existing Node services (`server`, `jobs`, `persist`, `orchestrator`, and `runner`) to the Workers runtime. That remains follow-up work because the current codebase still assumes long-lived Node processes, direct Postgres access, and service-to-service HTTP networking.
+
+## Bootstrap command
+
+```bash
+npm run deploy:platform -- --target cloudflare
+```
+
+The script reads `.env.cloudflare`, prompts for any missing required values, checks whether the Cloudflare resources already exist, and creates them when needed.
+
+For regular hosting, use:
+
+```bash
+npm run deploy:platform -- --target regular
+```
+
+That path keeps the existing self-hosted deployment flow unchanged.
