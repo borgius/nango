@@ -14,7 +14,7 @@ import { migrate as migrateKeystore } from '@nangohq/keystore';
 import { destroy as destroyKvstore } from '@nangohq/kvstore';
 import { destroy as destroyLogs, otlp, start as migrateLogs } from '@nangohq/logs';
 import { destroy as destroyRecords, migrate as migrateRecords } from '@nangohq/records';
-import { getGlobalOAuthCallbackUrl, getOtlpRoutes, getProviders, getServerPort, getWebsocketsPath } from '@nangohq/shared';
+import { getGlobalOAuthCallbackUrl, getOtlpRoutes, getProviders, getServerPort, getWebsocketsPath, userService } from '@nangohq/shared';
 import { NANGO_VERSION, flags, getLogger, initSentry, once, report } from '@nangohq/utils';
 
 import publisher from './clients/publisher.client.js';
@@ -91,6 +91,23 @@ if (NANGO_MIGRATE_AT_START === 'true') {
 // Preload providers
 getProviders();
 
+// Update default local user name/email if env vars are set
+if (envs.LOCAL_NANGO_USER_NAME || envs.LOCAL_NANGO_USER_EMAIL) {
+    const userId = envs.LOCAL_NANGO_USER_ID ?? 0;
+    const updates: Record<string, string> = {};
+    if (envs.LOCAL_NANGO_USER_NAME) {
+        updates['name'] = envs.LOCAL_NANGO_USER_NAME;
+    }
+    if (envs.LOCAL_NANGO_USER_EMAIL) {
+        updates['email'] = envs.LOCAL_NANGO_USER_EMAIL;
+    }
+    try {
+        await userService.update({ id: userId, ...updates });
+    } catch (err) {
+        logger.error(`Failed to update local user (id=${userId}) with custom name/email`, err);
+    }
+}
+
 refreshConnectionsCron();
 timeoutLogsOperations();
 deleteOldData();
@@ -145,5 +162,6 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     logger.info('Received SIGTERM...');
     beginShutdown();
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     setTimeout(close, envs.SERVER_SHUTDOWN_DELAY_MS);
 });
