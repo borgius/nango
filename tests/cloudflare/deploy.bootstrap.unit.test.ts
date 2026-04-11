@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runDeployment } from '../../scripts/cloudflare/deploy.js';
 
-describe('cloudflare deploy script e2e', () => {
+describe('cloudflare deploy bootstrap', () => {
     const createdDirs: string[] = [];
 
     afterEach(async () => {

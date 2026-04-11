@@ -356,7 +356,7 @@ async function readIfExists(filePath: string): Promise<string> {
 }
 
 function stripWrappingQuotes(value: string): string {
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    if (value.length > 1 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
         return value.slice(1, -1);
     }
     return value;
