@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
 
 type DeployTarget = 'cloudflare' | 'regular';
 type ResourceKind = 'd1' | 'kv' | 'r2' | 'queue';
@@ -74,25 +75,25 @@ export function parseArgs(argv: string[]): ParsedArgs {
     let envPath: string | undefined;
     let interactive = process.stdin.isTTY;
 
-    for (let index = 0; index < argv.length; index++) {
-        const arg = argv[index];
+    for (let argIndex = 0; argIndex < argv.length; argIndex++) {
+        const arg = argv[argIndex];
 
         if (arg === '--target') {
-            const value = argv[index + 1];
+            const value = argv[argIndex + 1];
             if (value === 'cloudflare' || value === 'regular') {
                 target = value;
-                index++;
+                argIndex++;
                 continue;
             }
             throw new Error('Missing or invalid value for --target. Expected "cloudflare" or "regular".');
         }
 
         if (arg === '--env-file') {
-            envPath = argv[index + 1];
+            envPath = argv[argIndex + 1];
             if (!envPath) {
                 throw new Error('Missing value for --env-file.');
             }
-            index++;
+            argIndex++;
             continue;
         }
 
@@ -378,7 +379,7 @@ async function main(): Promise<void> {
     await runDeployment({ target: args.target, envPath: args.envPath, interactive: args.interactive });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     main().catch((err: unknown) => {
         console.error(err instanceof Error ? err.message : String(err));
         process.exitCode = 1;
